@@ -11,8 +11,63 @@ def S(x):
     else:
         return 2.0 -2.0*x
 
+def fcone(x):
+    return [x, 1.0+0.0*x]
+
+
+
+def costcone(x0,x1,y0,y1,a,b):
+    if (a/(2.0*b)*abs(x0-y0))< np.pi:
+        return 4*b**2*(y1+x1-2*np.sqrt(y1*x1)*np.cos(a/(2.0*b)*abs(x0-y0)))
+    else:
+        return 4*b**2*(y1+x1+2*np.sqrt(y1*x1))
+
+
+
+def generatecostcone(X,Y,a,b,sigma):
+    """ Generate cost using cone metric using inverse tangent coordinates for radial dimension
+      
+        :param X: X[0] meshgrid base space coordinates
+                  X[1] \in ]0,pi/2[ meshgrid  inverse tangent of cone coordinates 
+        :param Y: Y[0] meshgrid base space coordinates
+                  Y[1] \in ]0,pi/2[ meshgrid inverse tangent of cone coordinates
+
+        :returns cost: cost matrix
+    """
+    
+    Nx = X[0].size
+    Ny = Y[0].size
+    vcostcone = np.vectorize(costcone)
+
+    cost = np.exp(-vcostcone(np.tensordot(X[0].flatten(),np.ones(Ny),axes =0),
+                            np.tensordot(np.tan(X[1].flatten()),np.ones(Ny),axes =0),
+                            np.tensordot(np.ones(Nx),Y[0].flatten(),axes =0),
+                            np.tensordot(np.ones(Nx),np.tan(Y[1].flatten()),axes =0),a,b)/sigma)
+   
+    return cost
+
+
+
+def generatecouplingcone(X,fundet,a,b,sigma):
+    """Generates L2 distance cost function penalising coupling 
+        
+       :param X: X[0] meshgrid base space coordinates
+                 X[1] \in [0,pi/2[ meshgrid inverse tangent of cone coordinates 
+       :param fundet: fundet[0] function defined on scalar x definining the coupling
+                      fundet[1] Jacobian determinant
+       :param eps: regularisation parameter (Sinkhorn)
+
+       :returns cost: cost matrix
+    """   
+    
+   
+    fundetx = fundet(X[0])
+    cost = generatecostcone(X,[fundetx[0],np.arctan(fundetx[1]*np.tan(X[1]))],a,b,sigma)
+    return cost   
+
+
 def generatecost(x,y,sigma):
-    """Generates L2 distance cost function
+    """Generates L2 distance cost function c(x,y) only 1D
 
        :param x: vector of coordinates of dimension n 
        :param y: vector of coordinates of dimension n
@@ -110,7 +165,7 @@ def computetransport(UMAT,k_map,G):
     N = UMAT.shape[1]
     K = UMAT.shape[0]
     if k_map == 0:
-        return eye(N)/N
+        return np.eye(N)/N
     else:
         temp_kernel2 = G[0]
         for ss in range(1,k_map):
