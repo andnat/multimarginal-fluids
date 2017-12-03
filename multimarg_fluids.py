@@ -95,54 +95,6 @@ def fixedpoint(LUMAT,G,nu):
    return LUMAT, err
 
 
-def fixedpoint_old(LUMAT,Xi0,Xi1,nu,h):
-   """Fixed point map on Lagrange multipliers for multimarginal problem
-       
-      :param LUMAT: array containing logarithm of Lagrange multipliers (rows) to enforce marginals
-      :param nu: marginal to be enforced at each time
-      :param Xi0: cost associated to successive time steps
-      :param Xi1: cost associated to coupling
-
-      :returns LUMAT: updated LUMAT
-      :returns err: L2 deviation from previous iteration 
-   """
-   N = LUMAT.shape[1] #Number of cells
-   K = LUMAT.shape[0] #Number of time steps
- 
-   # Change of vaiables
-   UMAT = np.exp(LUMAT)
-   
-   #errv = np.ones(K)
-
-   for imod in range(K):
-       # Each iteration updates the row (time level) imod in UMAT
-
-       if imod == K-1:
-           Xi_init = Xi1
-       else:
-           Xi_init = Xi0
-
-       Xiprod = np.eye(N)
-       for ll in range(K-1):
-            lmod = (ll + imod+1)%K
-            if lmod == K-1:
-                Xiprod = (Xiprod*UMAT[lmod,:]).dot(Xi1)
-            else:
-                Xiprod = (Xiprod*UMAT[lmod,:]).dot(Xi0)
-       
-
-       update_imod = nu/np.diag(Xi_init.dot(Xiprod))
-       #errv[imod] = np.sum(np.abs(UMAT[imod,:]-update_imod))
-       if imod == K-1:
-           err =  np.sum(np.abs(np.diag(Xi_init.dot(Xiprod))*UMAT[imod,:]-nu))
-
-       UMAT[imod,:] = update_imod
-   
-   #err = np.sqrt(np.sum(errv**2)/K)
-   LUMAT = np.log(UMAT)
-   
-   return LUMAT, err
-
 
 def computetransport(UMAT,k_map,G):
     """Compute plan time step 0  -> time step k_map
