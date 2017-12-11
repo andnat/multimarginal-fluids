@@ -8,16 +8,17 @@
 
 import multimarg_fluids as mm
 import numpy as np
+import time as time
 import matplotlib.pyplot as plt
 
-Nx = 20 
-Nr = 5 
+Nx = 30 
+Nr = 10 
 
 L = 1.0
 h = L/Nx
 hr = np.pi/2.0/(Nr+1)
-K = 16 
-eps = 0.05
+K = 10 
+eps = 0.005
 
 # Parameters for cone metric
 a = 1.0
@@ -37,6 +38,9 @@ Xi0init = mm.generateinitcostcone(X0,X,a,b,eps)
 Xi0 = mm.generatecostcone(X,X,a,b,eps)
 Xi1 = mm.generatecouplingcone(X,X0,mm.fcone,a,b,eps)
 
+#Xi1 = mm.generatecouplingcone(X,X0,mm.S,a,b,eps,det=False)
+
+
 # Alternate coupling assignment via permuation (odd N)
 #sigma = np.concatenate((np.arange(0,N,2),np.arange(N-2,0,-2)),axis=0)
 #Xi1 = mm.generatecost(X,X[sigma],eps*0.1)
@@ -51,9 +55,12 @@ ii = 0
 errv =[]
 G = [Xi0init,Xi0,Xi1]
 #while err>tol:
-for ii in range(100):
+for ii in range(200):
+    t = time.time()
     PMAT, err = mm.fixedpointcone(PMAT,G,X1,nu)
     errv.append(err)
+    elaps= time.time()-t
+    print elaps
     print err
 
 
@@ -61,12 +68,14 @@ for ii in range(100):
 #k_map = int(K/2)
 k_map = int(K/2)
 
-Tmap = mm.computetransportcone(PMAT,K-1,X1,[Xi0init,Xi0,Xi1])
+Tmap = mm.computetransportcone(PMAT,k_map,X1,G)
 plt.imshow(-30*Tmap,origin='lower',cmap = 'gray')
 
 plt.show()
 
+Tconemap = mm.computetransportcone(PMAT,k_map,X1,G,conedensity_flag=True)
+plt.imshow(-30*Tconemap,origin='lower',cmap = 'gray')
 
-
+plt.show()
 
 

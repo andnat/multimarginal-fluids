@@ -134,7 +134,6 @@ Functions for CH solutions on cone :
 def fcone(x):
     return [(np.exp(x)-1.0)/(np.exp(1)-1),np.exp(x)/(np.exp(1)-1)]
 
-
 def costcone(x0,x1,y0,y1,a,b):
     """ Computes cost on cone 
          
@@ -200,7 +199,7 @@ def generateinitcostcone(x,Y,a,b,sigma):
 
 
 
-def generatecouplingcone(X,x,fundet,a,b,sigma):
+def generatecouplingcone(X,x,fundet,a,b,sigma,det=True):
     """Generates L2 distance cost function penalising coupling 
         
        :param X: X[0] flattened meshgrid base space coordinates
@@ -209,14 +208,21 @@ def generatecouplingcone(X,x,fundet,a,b,sigma):
        :param fundet: fundet[0] function defined on scalar x definining the coupling
                       fundet[1] Jacobian determinant
        :param eps: regularisation parameter (Sinkhorn)
+       :param det: if false uses Jac = 1 and vectorizes to allow for generalized Euler solutions
 
        :returns cost: cost matrix (rectangular Nx*Nr times Nx)
     """   
     
-   
-    fundetx = fundet(x)
-    cost = generatecostcone(X,[fundetx[0],fundetx[1]],a,b,sigma)
-    return cost   
+    if det:
+        fundetx = fundet(x)
+        cost = generatecostcone(X,[fundetx[0],fundetx[1]],a,b,sigma)
+        return cost 
+    else:
+        vfun = np.vectorize(fundet)
+        funx = vfun(x)
+        cost = generatecostcone(X,[funx,np.ones(funx.shape)],a,b,sigma)
+        return cost
+
 
 def setcurrentkernelcone(k,K):
     """Returns flag which tells if we are at last time step
@@ -278,26 +284,52 @@ def computemultipliercone(p_old,pseudomarg,y,nu):
     def objective(p,i,pseudomargmat,y,nu):
         """ Computes marginal residual """
         
-        #Nx = len(nu)
-        Ny = len(y)
-        #newDensity = np.zeros(Nx)
-        newDensity = 0.0
-        for j in range(Ny):
-            newDensity +=  pseudomargmat[j,i]*np.exp(p*y[j])*y[j]
-        
+        #Ny = len(y)
+        #newDensity = 0.0
+        #for j in range(Ny):
+        #    newDensity +=  pseudomargmat[j,i]*np.exp(p*y[j])*y[j]
+        newDensity = (np.exp(p*y)*y).dot(pseudomargmat[:,i])
+
         return np.log(newDensity) -np.log(nu[i])
     
     Nx = len(nu)
     Ny = len(y)
     # IS THIS CORRECT?
     pseudomargmat = pseudomarg.reshape(Ny,Nx)
-    p_new=p_old
+    p_new=np.array(p_old)
     for i in range(Nx):
-        dico = so.root(objective,1.0,args=(i,pseudomargmat,y,nu),method="broyden1")
+        dico = so.root(objective,1.0,args=(i,pseudomargmat,y,nu),method="broyden1")#,tol = 1e-8)
         p_new[i] = dico["x"]
     return p_new
 
 
+
+
+def vcomputemultipliercone(p_old,pseudomarg,y,nu):
+    """ (VECTORIZED) Computes updated Lagrange multiplier (after the first time step) by solving nonlinear equation
+        In order to use this change the function fixedpointcone
+
+       :param p_old: old Lagrange multiplier
+       :param pseudomarg: pseudo marginal array
+       :param y: radial coordinate vector
+       :param nu: marginal on base space 
+    """
+    
+    def objective(p,pseudomargmat,y,nu):
+        """ Computes marginal residual """
+       
+        lognewDensity = np.log(np.diag((np.exp(np.outer(p,y))*y).dot(pseudomargmat)))
+        return lognewDensity -np.log(nu)
+    
+
+    Nx = len(nu)
+    Ny = len(y)
+
+    pseudomargmat = pseudomarg.reshape(Ny,Nx)
+    root = so.root(objective,np.ones(Nx),args=(pseudomargmat,y,nu),method="broyden1")#,tol = 1e-8)
+    p_new = root["x"]
+      
+    return p_new
 
 
 def fixedpointcone(PMAT,G,y,nu):
@@ -337,7 +369,7 @@ def fixedpointcone(PMAT,G,y,nu):
    return PMAT, err
 
 
-def computetransportcone(PMAT,k_map,y,G):
+def computetransportcone(PMAT,k_map,y,G, conedensity_flag = False):
     """Compute plan time step 0  -> time step k_map
  
        :param PMAT: array containing Lagrange multipliers (rows) to enforce marginals
@@ -345,8 +377,10 @@ def computetransportcone(PMAT,k_map,y,G):
        :param G: list G = [Xiinit, Xi0,Xi1]
        :param Xi0: cost associated to successive time steps
        :param Xi1: cost associated to coupling
+       :param conedensity_flag: flag to compute particle density on cone 
 
        :returns T: transport plan   
+       :returns conedensity: particle density on cone
     """
     Nx = PMAT.shape[1]
     K = PMAT.shape[0]
@@ -364,7 +398,10 @@ def computetransportcone(PMAT,k_map,y,G):
             
     U = liftmultipliercone(PMAT[k_map,:],y)
     T_tot = (temp_kernel*np.exp(PMAT[0,:]))*((temp_kernel2*U).T)
-    return np.sum(T_tot.reshape(len(y),Nx,Nx),axis=0)
+    if conedensity_flag:
+        return np.sum(T_tot.reshape(len(y),Nx,Nx),axis=1)
+    else:
+        return np.sum(T_tot.reshape(len(y),Nx,Nx),axis=0)
 
 
 

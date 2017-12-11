@@ -10,11 +10,11 @@ import multimarg_fluids as mm
 import numpy as np
 import matplotlib.pyplot as plt
 
-N = 101 
+N = 30 
 L = 1.0
 h = L/N
-K = 16 
-eps = 0.016**2
+K = 10
+eps = 0.005
 nu = np.ones(N)*h 
 
 X = np.linspace(0.0,L,N)
@@ -35,14 +35,14 @@ ii = 0
 errv =[]
 G = [Xi0,Xi1]
 #while err>tol:
-for ii in range(3000):
+for ii in range(400):
     LUMAT, err = mm.fixedpoint(LUMAT,G,nu)
     errv.append(err)
     print err
 
 
 # Compute transport map from 0 to time t
-k_map = int(K/2
+k_map = int(K/2)
 Tmap = mm.computetransport(np.exp(LUMAT),k_map,[Xi0,Xi1])
 plt.imshow(-30*Tmap,origin='lower',cmap = 'gray')
 
