@@ -11,14 +11,14 @@ import numpy as np
 import time as time
 import matplotlib.pyplot as plt
 
-Nx = 30 
-Nr = 10 
+Nx = 20 
+Nr = 15#7 
 
 L = 1.0
 h = L/Nx
 hr = np.pi/2.0/(Nr+1)
 K = 10 
-eps = 0.005
+eps = 0.002
 
 # Parameters for cone metric
 a = 1.0
@@ -26,7 +26,9 @@ b= 0.5
 
 X0 = np.linspace(0.0,L,Nx)
 #X1 = np.asarray([1.0]) 
-X1= np.exp(np.linspace(-1.0,1.0,Nr))
+#X1= np.exp(np.linspace(-2.0,1.0,Nr))
+X1 =np.linspace(0.6,1.3,Nr)
+#X1 = np.linspace(0.7,1.3,Nr)
 
 X0m,X1m = np.meshgrid(X0,X1)
 X =[X0m,X1m]
@@ -36,9 +38,9 @@ nu = h*np.ones(Nx)
 
 Xi0init = mm.generateinitcostcone(X0,X,a,b,eps)
 Xi0 = mm.generatecostcone(X,X,a,b,eps)
-Xi1 = mm.generatecouplingcone(X,X0,mm.fcone,a,b,eps)
+#Xi1 = mm.generatecouplingcone(X,X0,mm.fcone,a,b,eps)
 
-#Xi1 = mm.generatecouplingcone(X,X0,mm.S,a,b,eps,det=False)
+Xi1 = mm.generatecouplingcone(X,X0,mm.S,a,b,eps,det=False)
 
 
 # Alternate coupling assignment via permuation (odd N)
@@ -55,27 +57,31 @@ ii = 0
 errv =[]
 G = [Xi0init,Xi0,Xi1]
 #while err>tol:
-for ii in range(200):
+for ii in range(10000):
     t = time.time()
     PMAT, err = mm.fixedpointcone(PMAT,G,X1,nu)
     errv.append(err)
     elaps= time.time()-t
+
+    print ii
     print elaps
     print err
 
 
 # Compute transport map from 0 to time t
 #k_map = int(K/2)
-k_map = int(K/2)
 
-Tmap = mm.computetransportcone(PMAT,k_map,X1,G)
-plt.imshow(-30*Tmap,origin='lower',cmap = 'gray')
+for k_map in range(K):
+    Tmap = mm.computetransportcone(PMAT,k_map,X1,G)
+    fig = plt.imshow(-30*Tmap,origin='lower',cmap = 'gray')
+    fig.axes.get_xaxis().set_visible(False)
+    fig.axes.get_yaxis().set_visible(False)
+    plt.savefig(('transport1_%d' %k_map),format = "eps")
 
-plt.show()
-
-Tconemap = mm.computetransportcone(PMAT,k_map,X1,G,conedensity_flag=True)
-plt.imshow(-30*Tconemap,origin='lower',cmap = 'gray')
-
-plt.show()
+    Tconemap = mm.computetransportcone(PMAT,k_map,X1,G,conedensity_flag=True)
+    fig = plt.imshow(-30*Tconemap,origin='lower',cmap = 'gray')
+    fig.axes.get_xaxis().set_visible(False)
+    fig.axes.get_yaxis().set_visible(False)
+    plt.savefig(('radialmarg1_%d' %k_map),format = "eps")
 
 

@@ -6,14 +6,14 @@ import numpy as np
 import scipy.optimize as so
 
 def S(x):
-    #return 1.0 - x
-    if x < 0.5:
-        return 2.0*x 
-    else:
-        return 2.0 -2.0*x
+    return 1.0 - x
+    #if x < 0.5:
+    #    return 2.0*x 
+    #else:
+    #    return 2.0 -2.0*x
 
 
-def generatecost(x,y,sigma):
+def generatecost(x,y,sigma,penalty=1.0):
     """Generates L2 distance cost function c(x,y) only 1D
 
        :param x: vector of coordinates of dimension n 
@@ -23,7 +23,7 @@ def generatecost(x,y,sigma):
        :returns cost: cost matrix
     """
     N = len(x)
-    cost = np.exp(-(np.tensordot(x,np.ones(N),axes =0) - np.tensordot(np.ones(N),y,axes =0))**2/sigma)
+    cost = np.exp(-penalty*(np.tensordot(x,np.ones(N),axes =0) - np.tensordot(np.ones(N),y,axes =0))**2/sigma)
     return cost 
 
 def generatecoupling(x,fun,sigma):
@@ -36,7 +36,7 @@ def generatecoupling(x,fun,sigma):
        :returns cost: cost matrix
     """   
     vfun = np.vectorize(fun)
-    cost = generatecost(x,vfun(x),sigma)
+    cost = generatecost(x,vfun(x),sigma,10.0)
     return cost   
 
 def setcurrentkernel(k,K):
@@ -151,14 +151,16 @@ def costcone(x0,x1,y0,y1,a,b):
         return 4*b**2*(y1+x1+2*np.sqrt(y1*x1))
 
 
-def generatecostcone(X,Y,a,b,sigma):
+def generatecostcone(X,Y,a,b,sigma,penalty=1.0):
     """ Generate cost using cone metric
       
         :param X: X[0] flattened meshgrid base space coordinates
                   X[1] \in log ]0,M] flattened meshgrid radial cordinates 
         :param Y: Y[0] flattened meshgrid base space coordinates
                   Y[1] \in log ]0,M] flattened meshgrid radial coordinates
-
+        :param a,b: cone metric parameters
+        :param sigma: Sinkhor regularization parameter 
+        :param penalty: diminishes sigma, new sigma = sigma/penalty
         :returns cost: cost matrix
     """
     
@@ -166,7 +168,7 @@ def generatecostcone(X,Y,a,b,sigma):
     Ny = Y[0].size
     vcostcone = np.vectorize(costcone)
 
-    cost = np.exp(-vcostcone(np.tensordot(X[0].flatten(),np.ones(Ny),axes =0),
+    cost = np.exp(-penalty*vcostcone(np.tensordot(X[0].flatten(),np.ones(Ny),axes =0),
                             np.tensordot(X[1].flatten(),np.ones(Ny),axes =0),
                             np.tensordot(np.ones(Nx),Y[0].flatten(),axes =0),
                             np.tensordot(np.ones(Nx),Y[1].flatten(),axes =0),a,b)/sigma)
@@ -215,12 +217,12 @@ def generatecouplingcone(X,x,fundet,a,b,sigma,det=True):
     
     if det:
         fundetx = fundet(x)
-        cost = generatecostcone(X,[fundetx[0],fundetx[1]],a,b,sigma)
+        cost = generatecostcone(X,[fundetx[0],fundetx[1]],a,b,sigma,penalty=10.0)
         return cost 
     else:
         vfun = np.vectorize(fundet)
         funx = vfun(x)
-        cost = generatecostcone(X,[funx,np.ones(funx.shape)],a,b,sigma)
+        cost = generatecostcone(X,[funx,np.ones(funx.shape)],a,b,sigma,penalty=10.0)
         return cost
 
 
@@ -385,7 +387,12 @@ def computetransportcone(PMAT,k_map,y,G, conedensity_flag = False):
     Nx = PMAT.shape[1]
     K = PMAT.shape[0]
     if k_map == 0:
-        return np.eye(N)/N
+        # Only works for homogeneous density and 1 in y
+
+        if conedensity_flag:
+            return np.outer(y==1,np.ones(Nx)/Nx)
+        else:
+            return np.eye(Nx)/Nx
     else:
         temp_kernel2 = G[0]
         for ss in range(1,k_map):
