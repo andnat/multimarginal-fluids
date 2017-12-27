@@ -10,7 +10,7 @@ import multimarg_fluids as mm
 import numpy as np
 import matplotlib.pyplot as plt
 
-N = 30 
+N = 20 
 L = 1.0
 h = L/N
 K = 10
@@ -35,7 +35,7 @@ ii = 0
 errv =[]
 G = [Xi0,Xi1]
 #while err>tol:
-for ii in range(400):
+for ii in range(2000):
     LUMAT, err = mm.fixedpoint(LUMAT,G,nu)
     errv.append(err)
     print err

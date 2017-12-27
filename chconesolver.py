@@ -11,14 +11,14 @@ import numpy as np
 import time as time
 import matplotlib.pyplot as plt
 
-Nx = 20 
-Nr = 15#7 
+Nx = 25 
+Nr = 20#7 
 
 L = 1.0
 h = L/Nx
 hr = np.pi/2.0/(Nr+1)
-K = 10 
-eps = 0.002
+K = 16 
+eps = 0.005
 
 # Parameters for cone metric
 a = 1.0
@@ -57,7 +57,7 @@ ii = 0
 errv =[]
 G = [Xi0init,Xi0,Xi1]
 #while err>tol:
-for ii in range(10000):
+for ii in range(20000):
     t = time.time()
     PMAT, err = mm.fixedpointcone(PMAT,G,X1,nu)
     errv.append(err)
@@ -76,12 +76,12 @@ for k_map in range(K):
     fig = plt.imshow(-30*Tmap,origin='lower',cmap = 'gray')
     fig.axes.get_xaxis().set_visible(False)
     fig.axes.get_yaxis().set_visible(False)
-    plt.savefig(('transport1_%d' %k_map),format = "eps")
+    plt.savefig(('transport0_%d.eps' %k_map),format = "eps")
 
     Tconemap = mm.computetransportcone(PMAT,k_map,X1,G,conedensity_flag=True)
     fig = plt.imshow(-30*Tconemap,origin='lower',cmap = 'gray')
     fig.axes.get_xaxis().set_visible(False)
     fig.axes.get_yaxis().set_visible(False)
-    plt.savefig(('radialmarg1_%d' %k_map),format = "eps")
+    plt.savefig(('radialmarg0_%d.eps' %k_map),format = "eps")
 
 
