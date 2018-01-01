@@ -1,9 +1,12 @@
 """
 Module containing classes and functions for computation of a multimarginal problem for fluids 
 """
-
+import os
 import numpy as np
 import scipy.optimize as so
+import scipy.misc as misc
+import matplotlib as plt
+from joblib import Parallel, delayed
 
 def S(x):
     return 1.0 - x
@@ -151,7 +154,7 @@ def costcone(x0,x1,y0,y1,a,b):
         return 4*b**2*(y1+x1+2*np.sqrt(y1*x1))
 
 
-def generatecostcone(X,Y,a,b,sigma,penalty=1.0):
+def generatecostcone(X,Y,a,b,sigma,penalty=1.0,log_flag=False):
     """ Generate cost using cone metric
       
         :param X: X[0] flattened meshgrid base space coordinates
@@ -159,25 +162,29 @@ def generatecostcone(X,Y,a,b,sigma,penalty=1.0):
         :param Y: Y[0] flattened meshgrid base space coordinates
                   Y[1] \in log ]0,M] flattened meshgrid radial coordinates
         :param a,b: cone metric parameters
-        :param sigma: Sinkhor regularization parameter 
+        :param sigma: Sinkhorn regularization parameter 
         :param penalty: diminishes sigma, new sigma = sigma/penalty
+        :param log_flag: flag if true uses log scale for cost computation
+        
         :returns cost: cost matrix
     """
     
     Nx = X[0].size
     Ny = Y[0].size
     vcostcone = np.vectorize(costcone)
-
-    cost = np.exp(-penalty*vcostcone(np.tensordot(X[0].flatten(),np.ones(Ny),axes =0),
+    
+    cost = -penalty*vcostcone(np.tensordot(X[0].flatten(),np.ones(Ny),axes =0),
                             np.tensordot(X[1].flatten(),np.ones(Ny),axes =0),
                             np.tensordot(np.ones(Nx),Y[0].flatten(),axes =0),
-                            np.tensordot(np.ones(Nx),Y[1].flatten(),axes =0),a,b)/sigma)
-   
-    return cost
+                            np.tensordot(np.ones(Nx),Y[1].flatten(),axes =0),a,b)/sigma
+    if log_flag:
+        return cost
+    else:
+        return np.exp(cost)
 
 
 
-def generateinitcostcone(x,Y,a,b,sigma):
+def generateinitcostcone(x,Y,a,b,sigma,log_flag=False):
     """ Generate cost relative to initial time (when radial coordinate is fixed to 1) using cone metric
       
         :param x: array of base space coordinates
@@ -192,16 +199,21 @@ def generateinitcostcone(x,Y,a,b,sigma):
     Ny = Y[0].size
     vcostcone = np.vectorize(costcone)
 
-    cost = np.exp(-vcostcone(np.tensordot(x,np.ones(Ny),axes =0),
+    cost = -vcostcone(np.tensordot(x,np.ones(Ny),axes =0),
                             np.tensordot(r,np.ones(Ny),axes =0),
                             np.tensordot(np.ones(Nx),Y[0].flatten(),axes =0),
-                            np.tensordot(np.ones(Nx),Y[1].flatten(),axes =0),a,b)/sigma)
+                            np.tensordot(np.ones(Nx),Y[1].flatten(),axes =0),a,b)/sigma
    
-    return cost
+    if log_flag:
+        return cost
+    else:
+        return np.exp(cost)
+
+   
 
 
 
-def generatecouplingcone(X,x,fundet,a,b,sigma,det=True):
+def generatecouplingcone(X,x,fundet,a,b,sigma,det=True,log_flag=False):
     """Generates L2 distance cost function penalising coupling 
         
        :param X: X[0] flattened meshgrid base space coordinates
@@ -217,12 +229,12 @@ def generatecouplingcone(X,x,fundet,a,b,sigma,det=True):
     
     if det:
         fundetx = fundet(x)
-        cost = generatecostcone(X,[fundetx[0],fundetx[1]],a,b,sigma,penalty=10.0)
+        cost = generatecostcone(X,[fundetx[0],fundetx[1]],a,b,sigma,penalty=10.0,log_flag=log_flag)
         return cost 
     else:
         vfun = np.vectorize(fundet)
         funx = vfun(x)
-        cost = generatecostcone(X,[funx,np.ones(funx.shape)],a,b,sigma,penalty=10.0)
+        cost = generatecostcone(X,[funx,np.ones(funx.shape)],a,b,sigma,penalty=10.0,log_flag=log_flag)
         return cost
 
 
@@ -236,7 +248,7 @@ def setcurrentkernelcone(k,K):
     """
     return 0 + (k>0.1) + (k==K-1) 
 
-def liftmultipliercone(p,y):
+def liftmultipliercone(p,y,log_flag=False):
     """ Maps Lagrange multiplier on base space to one on cone 
  
     :param p: lagrange multiplier (len= Nx)  array
@@ -245,10 +257,14 @@ def liftmultipliercone(p,y):
     :returns: lagrange multiplier (len= Nx*Nr)
     """
     Nr = len(y)
-    return (np.exp(((np.tile(p,(Nr,1)).T)*y)).T).flatten() 
+    lift = ((((np.tile(p,(Nr,1)).T)*y)).T).flatten() 
+    if log_flag:
+        return lift
+    else:
+        return np.exp(lift)
 
 
-def computepseudomarginalcone(k,K,y,G,PMAT):
+def computepseudomarginalcone(k,K,y,G,PMAT,log_flag=False):
     """Computes kth pseudo marginal (needs to be multiplied by kth Lagrange multiplier to produce the kth marginal).
        Used for update of kth Lagrange multiplier
   
@@ -260,21 +276,31 @@ def computepseudomarginalcone(k,K,y,G,PMAT):
        :param Xi0: cost associated to successive time steps
        :param Xi1: cost associated to coupling
        :param PMAT: array containing Lagrange multipliers (rows) in log scale to enforce marginals 
+
+       :returns: pseudomarginal (in log scale if log_flag is on)
     """ 
     sequence = np.roll(range(K),-k-1)
     temp_kernel = G[setcurrentkernelcone(k,K)]
 
     for ii in sequence[:-1]:
         if ii == 0:
-            U = np.exp(PMAT[ii,:])
+            if not log_flag:
+                U = np.exp(PMAT[ii,:])
+            else:
+                U =PMAT[ii,:]
         else:
-            U = liftmultipliercone(PMAT[ii,:],y)
-        temp_kernel = (temp_kernel*U).dot(G[setcurrentkernelcone(ii,K)])
+            U = liftmultipliercone(PMAT[ii,:],y,log_flag=log_flag)
 
+        G_loc = G[setcurrentkernelcone(ii,K)]
+        
+        if not log_flag:
+            temp_kernel = (temp_kernel*U).dot(G_loc)
+        else:
+            temp_kernel = np.log(np.sum(np.exp(np.expand_dims(temp_kernel+U,axis=2)+np.expand_dims(G_loc,axis=0)), axis=1)) 
     return np.diag(temp_kernel)
 
 
-def computemultipliercone(p_old,pseudomarg,y,nu):
+def computemultipliercone(p_old,pseudomarg,y,nu,log_flag=False):
     """Computes updated Lagrange multiplier (after the first time step) by solving nonlinear equation
        
        :param p_old: old Lagrange multiplier
@@ -282,29 +308,53 @@ def computemultipliercone(p_old,pseudomarg,y,nu):
        :param y: radial coordinate vector
        :param nu: marginal on base space 
     """
-    
-    def objective(p,i,pseudomargmat,y,nu):
-        """ Computes marginal residual """
-        
-        #Ny = len(y)
-        #newDensity = 0.0
-        #for j in range(Ny):
-        #    newDensity +=  pseudomargmat[j,i]*np.exp(p*y[j])*y[j]
-        newDensity = (np.exp(p*y)*y).dot(pseudomargmat[:,i])
-
-        return np.log(newDensity) -np.log(nu[i])
-    
+     
+       
+    if log_flag:
+         obj = objectiveLOG
+    else:
+         obj = objective
+ 
     Nx = len(nu)
     Ny = len(y)
-    # IS THIS CORRECT?
+   
     pseudomargmat = pseudomarg.reshape(Ny,Nx)
+   
+    # Not parallelized version
     p_new=np.array(p_old)
     for i in range(Nx):
-        dico = so.root(objective,1.0,args=(i,pseudomargmat,y,nu),method="broyden1")#,tol = 1e-8)
+        dico = so.root(obj,1.0,args=(i,pseudomargmat[:,i],y,nu[i]), method="broyden1",tol = 1e-6)
+        #dico = so.root(obj,1.0, jac = jacobjective,args=(i,pseudomargmat[:,i],y,nu[i]),tol = 1e-6)#, method="broyden1")#,tol = 1e-8)
         p_new[i] = dico["x"]
+        #p_new[i] =  so.fsolve(obj,1.0,fprime=jacobjective, args=(i,pseudomargmat[:,i],y,nu[i]), xtol = 1e-6)
+ 
+    # Parallelized version
+    #p_new = np.asarray(Parallel(n_jobs=3)(delayed(optimizer)(i=i,pseudomargmat=pseudomargmat[:,i],y=y,nu=nu[i],obj=obj) for i in range(Nx)))
+  
     return p_new
 
+def objective(p,i,pseudomargmati,y,nui):
+    """ Computes marginal residual """
+    #newDensityLOG = np.log((np.exp(p*y)*y).dot(pseudomargmati))
+    newDensityLOG = misc.logsumexp(p*y,b=y*pseudomargmati)
+    return newDensityLOG -np.log(nui)
 
+def jacobjective(p,i,pseudomargmati,y,nui):
+    """Computes jacobian of objective """
+    A = p*y
+    B = y*pseudomargmati
+    Jac = np.exp( misc.logsumexp(A,b=B)-misc.logsumexp(A,b =y*B)) +p*i*pseudomargmati*nui*0.0
+    #Jac = ((np.exp(p*y)*y*y).dot(pseudomargmati))/((np.exp(p*y)*y).dot(pseudomargmati)) +p*i*pseudomargmati*nui*0.0
+    return Jac 
+
+def objectiveLOG(p,i,pseudomargmatLOG,y,nu):
+    """ Computes marginal residual using  log coordinates """
+    newDensityLOG =np.log(np.sum(np.exp( np.log(y) + p*y+pseudomargmatLOG[:,i])))
+    return newDensityLOG-np.log(nu[i])
+
+ 
+def optimizer(i,pseudomargmat,y,nu,obj):
+    return so.root(obj,1.0,args=(i,pseudomargmat,y,nu),method="broyden1",tol=1e-6)['x']
 
 
 def vcomputemultipliercone(p_old,pseudomarg,y,nu):
@@ -317,10 +367,10 @@ def vcomputemultipliercone(p_old,pseudomarg,y,nu):
        :param nu: marginal on base space 
     """
     
-    def objective(p,pseudomargmat,y,nu):
+    def vobjective(p,pseudomargmat,y,nu):
         """ Computes marginal residual """
-       
-        lognewDensity = np.log(np.diag((np.exp(np.outer(p,y))*y).dot(pseudomargmat)))
+        #lognewDensity = np.log(np.diag((np.exp(np.outer(p,y))*y).dot(pseudomargmat)))
+        lognewDensity = np.log(np.sum((np.exp(np.outer(p,y))*y)*(pseudomargmat).T, axis = 1))
         return lognewDensity -np.log(nu)
     
 
@@ -328,13 +378,12 @@ def vcomputemultipliercone(p_old,pseudomarg,y,nu):
     Ny = len(y)
 
     pseudomargmat = pseudomarg.reshape(Ny,Nx)
-    root = so.root(objective,np.ones(Nx),args=(pseudomargmat,y,nu),method="broyden1")#,tol = 1e-8)
-    p_new = root["x"]
-      
+    p_new = so.leastsq(vobjective,np.ones(Nx),args=(pseudomargmat,y,nu),xtol = 1e-6)
+         
     return p_new
 
 
-def fixedpointcone(PMAT,G,y,nu):
+def fixedpointcone(PMAT,G,y,nu,log_flag=False):
    """Fixed point map on Lagrange multipliers for multimarginal problem
        
       :param PMAT: array containing logarithm of Lagrange multipliers (rows) to enforce marginals
@@ -353,25 +402,32 @@ def fixedpointcone(PMAT,G,y,nu):
  
    # Change of vaiables
    
-   temp = computepseudomarginalcone(0,K,y,G,PMAT)   
-   PMAT[0,:] = np.log(nu/temp)
+   temp = computepseudomarginalcone(0,K,y,G,PMAT,log_flag=log_flag)   
+   if log_flag:
+       PMAT[0,:] = np.log(nu)-temp
+   else: 
+       PMAT[0,:] = np.log(nu/temp)
    for imod in range(1,K):
        # Each iteration updates the row (time level) imod in UMAT
-       temp = computepseudomarginalcone(imod,K,y,G,PMAT)
-       Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu)
+       temp = computepseudomarginalcone(imod,K,y,G,PMAT,log_flag=log_flag)
+       #Pnew = vcomputemultipliercone(PMAT[imod,:],temp,y,nu)
+       Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu,log_flag=log_flag)
        if imod == int(K/2):
             newDensity = 0.0
+            # NOT using LOG scale here to produce error
             U =  liftmultipliercone(PMAT[imod,:],y)
+            if log_flag:
+                temp= np.exp(temp)
             marg = np.sum((temp*U).reshape(len(y),Nx).T*y,axis=1)
             err = np.sum(np.abs(marg-nu))
             #err = np.sum(np.abs(PMAT[imod,:]))
        PMAT[imod,:] = Pnew
-
+       
 
    return PMAT, err
 
 
-def computetransportcone(PMAT,k_map,y,G, conedensity_flag = False):
+def computetransportcone(PMAT,k_map,y,G, conedensity_flag = False,log_flag = False):
     """Compute plan time step 0  -> time step k_map
  
        :param PMAT: array containing Lagrange multipliers (rows) to enforce marginals
@@ -386,6 +442,10 @@ def computetransportcone(PMAT,k_map,y,G, conedensity_flag = False):
     """
     Nx = PMAT.shape[1]
     K = PMAT.shape[0]
+    # NOT impplemeneted in log scale: if G in log scale here computes exponential
+    if log_flag:
+       G =[np.exp(G[0]),np.exp(G[1]),np.exp(G[2])]
+   
     if k_map == 0:
         # Only works for homogeneous density and 1 in y
 
@@ -410,5 +470,75 @@ def computetransportcone(PMAT,k_map,y,G, conedensity_flag = False):
     else:
         return np.sum(T_tot.reshape(len(y),Nx,Nx),axis=0)
 
+
+def savefigscone(errv,PMAT, X1, eps , path , ext='eps', verbose=True):
+    """Save figures 
+    
+    :param path: folder where to save to 
+    """
+    # Extract parameters 
+    Nx = PMAT.shape[1]
+    K = PMAT.shape[0]
+    Nr = X1.size
+    rmin = X1[0]
+    rmax = X1[-1]
+    Niter = len(errv)
+
+    # If the directory does not exist, create it
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    # The final path to save to
+    savepath = os.path.join(path, filename)
+
+    if verbose:
+        print("Saving figure to '%s'..." % savepath),
+
+    #Write text file with parameters
+    filename = "logfile.txt"
+    savepath = os.path.join(path, filename)
+    f = open(savepath,'w')
+    f.write('# PARAMETERS\n')
+    f.write("# Niter: Number of iterations\n")
+    f.write("# K: Number of time steps\n")
+    f.write("# Nx Number of points in physical space \n")
+    f.write("# Nr Number of points in radial direction\n")
+    f.write("# rmax: Min radial bound \n")
+    f.write("# rmin: Max radial bound \n\n")
+    f.write("Niter=%d \nK=%d \nNx=%d \nNr=%d \nrmin=%f \nrmax=%f "% (Niter,K,Nx,Nr,rmin ,rmax))
+
+    f.close()
+
+
+    # Actually save the figures
+    filename = "convergence.%s" %ext
+    savepath = os.path.join(path, filename)
+    fig = plt.semilogy(errv)
+    plt.savefig(savepath, format = "eps")
+    plt.close	 
+
+    for k_map in range(K):
+
+	Tmap = mm.computetransportcone(PMAT,k_map,X1,G,conedensity_flag = False, log_flag=log_flag)
+	fig = plt.imshow(-30*Tmap,origin='lower',cmap = 'gray')
+	fig.axes.get_xaxis().set_visible(False)
+	fig.axes.get_yaxis().set_visible(False)
+	# The final path to save to
+	filename = "transport_%d.%s" % (k_map, ext)
+	savepath = os.path.join(path, filename)
+	plt.savefig(savepath, format =ext )
+	plt.close()
+	Tconemap = mm.computetransportcone(PMAT,k_map,X1,G,conedensity_flag=True, log_flag=log_flag)
+	fig = plt.imshow(-30*Tconemap,origin='lower',cmap = 'gray')
+	fig.axes.get_xaxis().set_visible(False)
+	fig.axes.get_yaxis().set_visible(False)
+	# The final path to save to
+	filename = "radialmarg_%d.%s" % (k_map, ext)
+	savepath = os.path.join(path, filename)
+	plt.savefig(savepath, format =ext )  
+	plt.close()
+
+    if verbose:
+        print("Done")
 
 
