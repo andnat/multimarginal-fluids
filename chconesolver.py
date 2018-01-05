@@ -11,14 +11,14 @@ import numpy as np
 import time as time
 import matplotlib.pyplot as plt
 
-Nx = 15 #28#35 
-Nr = 11
+Nx = 30 #28#35 
+Nr = 21
 
 L = 1.0
 h = L/Nx
 hr = np.pi/2.0/(Nr+1)
-K = 20#20 
-eps = 0.0001# 0.0005
+K = 30#20 
+eps = 0.0005# 0.0005
 
 # Parameters for cone metric
 a = 1.0
@@ -65,12 +65,13 @@ G = [Xi0init,Xi0,Xi1]
 for ii in range(1):
     t = time.time()
     PMAT, err = mm.fixedpointcone(PMAT,G,X1,nu, log_flag=log_flag)
+    #PMAT, err = mm.fixedpointconeroll(PMAT,G,X1,nu, log_flag=log_flag)
     errv.append(err)
     elaps= time.time()-t
     ii +=1
-    print ii
-    print elaps
-    print err
+    print("ITERATION %d" % ii)
+    print("Elapsed time: %f" % elaps)
+    print("Marginal error: %f" % err)
 
 
 # Compute transport map from 0 to time t
@@ -78,7 +79,7 @@ for ii in range(1):
 
 
 
-path = "Figs/Test2"
+path = "Figs/Test3"
 #mm.savefigscone(errv,PMAT, X1, eps , path , ext='eps')
 
 

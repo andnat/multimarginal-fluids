@@ -5,7 +5,7 @@ import os
 import numpy as np
 import scipy.optimize as so
 import scipy.misc as misc
-import matplotlib as plt
+import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 
 def S(x):
@@ -264,6 +264,41 @@ def liftmultipliercone(p,y,log_flag=False):
         return np.exp(lift)
 
 
+def computetempkernelcone(temp_kernel,ii,K,y,G,PMAT,log_flag=False):
+    """Computes kth pseudo marginal (needs to be multiplied by kth Lagrange multiplier to produce the kth marginal).
+       Used for update of kth Lagrange multiplier
+  
+       :param k: current time step (from 0 to K-1)
+       :param K: total number of time steps
+       :param y: array of coordinates in radial direction
+       :param G: list G = [Xi0init,Xi0,Xi1]
+       :param Xi0init: cost associated with first and second time steps
+       :param Xi0: cost associated to successive time steps
+       :param Xi1: cost associated to coupling
+       :param PMAT: array containing Lagrange multipliers (rows) in log scale to enforce marginals 
+
+       :returns: pseudomarginal (in log scale if log_flag is on)
+    """ 
+
+    if ii == 0:
+        if not log_flag:
+           U = np.exp(PMAT[ii,:])
+        else:
+           U =PMAT[ii,:]
+    else:
+	U = liftmultipliercone(PMAT[ii,:],y,log_flag=log_flag)
+
+    G_loc = G[setcurrentkernelcone(ii,K)]
+
+    if not log_flag:
+        temp_kernel = (temp_kernel*U).dot(G_loc)
+    else:
+	temp_kernel = np.log(np.sum(np.exp(np.expand_dims(temp_kernel+U,axis=2)+np.expand_dims(G_loc,axis=0)), axis=1))
+    
+ 
+    return temp_kernel
+
+
 def computepseudomarginalcone(k,K,y,G,PMAT,log_flag=False):
     """Computes kth pseudo marginal (needs to be multiplied by kth Lagrange multiplier to produce the kth marginal).
        Used for update of kth Lagrange multiplier
@@ -329,7 +364,7 @@ def computemultipliercone(p_old,pseudomarg,y,nu,log_flag=False):
         #p_new[i] =  so.fsolve(obj,1.0,fprime=jacobjective, args=(pseudomargmat[:,i],y,nu[i]), xtol = 1e-6)
  
     # Parallelized version
-    #p_new = np.asarray(Parallel(n_jobs=3)(delayed(optimizer)(pseudomargmat=pseudomargmat[:,i],y=y,nu=nu[i],obj=obj) for i in range(Nx)))
+    #p_new = np.asarray(Parallel(n_jobs=3)(delayed(optimizer)(pseudomargmati=pseudomargmat[:,i],y=y,nui=nu[i],obj=obj) for i in range(Nx)))
   
     return p_new
 
@@ -354,7 +389,7 @@ def objectiveLOG(p,pseudomargmatLOGi,y,nui):
     return newDensityLOG-np.log(nui)
 
  
-def optimizer(pseudomargmat,y,nui,obj):
+def optimizer(pseudomargmati,y,nui,obj):
     return so.root(obj,1.0,args=(pseudomargmati,y,nui),method="broyden1",tol=1e-6)['x']
 
 
@@ -384,6 +419,65 @@ def vcomputemultipliercone(p_old,pseudomarg,y,nu):
     return p_new
 
 
+def fixedpointconeroll(PMAT,G,y,nu,log_flag=False):
+   """Fixed point map on Lagrange multipliers for multimarginal problem
+       
+      :param PMAT: array containing logarithm of Lagrange multipliers (rows) to enforce marginals
+      :param nu: marginal to be enforced at each time (on base space)
+      :param G: list G = [Xi0init,Xi0,Xi1]
+      :param Xi0init: cost associated to first and second time steps
+      :param Xi0: cost associated to successive time steps
+      :param Xi1: cost associated to coupling
+      :param nu: marginal to be enforced at each time
+   
+      :returns LUMAT: updated LUMAT
+      :returns err: marginal deviation from previous iteration at time K/2  
+   """
+   Nx = PMAT.shape[1] #Number of cells
+   K =  PMAT.shape[0] #Number of time steps
+   
+   # Change of variables
+   temp = computepseudomarginalcone(0,K,y,G,PMAT,log_flag=log_flag)   
+   if log_flag:
+       PMAT[0,:] = np.log(nu)-temp
+   else: 
+       PMAT[0,:] = np.log(nu/temp)
+
+   pseudostored = (G[2]*np.exp(PMAT[0,:])).dot(G[0])
+   
+   for imod in range(1,K):
+       print("Computing time step %d of %d ..." %(imod,K))
+       # Each iteration updates the row (time level) imod in UMAT
+       if imod < K-1:     
+            temp_kernel = G[setcurrentkernelcone(imod,K)]
+            for ii in range(imod+1,K-1): 
+                temp_kernel = computetempkernelcone(temp_kernel,ii,K,y,G,PMAT,log_flag=log_flag)
+           
+            U = liftmultipliercone(PMAT[K-1,:],y)
+            temp =np.sum((temp_kernel*U)*pseudostored.T,axis=1) 
+       else:
+            temp = np.diag(pseudostored)
+         
+       #Pnew = vcomputemultipliercone(PMAT[imod,:],temp,y,nu)
+       Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu,log_flag=log_flag)
+       
+       if imod == int(K/2):
+            newDensity = 0.0
+            # NOT using LOG scale here to produce error
+            U =  liftmultipliercone(PMAT[imod,:],y)
+            if log_flag:
+                temp= np.exp(temp)
+            marg = np.sum((temp*U).reshape(len(y),Nx).T*y,axis=1)
+            err = np.sum(np.abs(marg-nu))
+            #err = np.sum(np.abs(PMAT[imod,:]))
+       PMAT[imod,:] = Pnew
+       
+       pseudostored = computetempkernelcone(pseudostored,imod,K,y,G,PMAT,log_flag=log_flag)
+
+   return PMAT, err
+
+
+
 def fixedpointcone(PMAT,G,y,nu,log_flag=False):
    """Fixed point map on Lagrange multipliers for multimarginal problem
        
@@ -401,7 +495,7 @@ def fixedpointcone(PMAT,G,y,nu,log_flag=False):
    Nx = PMAT.shape[1] #Number of cells
    K =  PMAT.shape[0] #Number of time steps
  
-   # Change of vaiables
+   # Change of variables
    
    temp = computepseudomarginalcone(0,K,y,G,PMAT,log_flag=log_flag)   
    if log_flag:
@@ -409,6 +503,7 @@ def fixedpointcone(PMAT,G,y,nu,log_flag=False):
    else: 
        PMAT[0,:] = np.log(nu/temp)
    for imod in range(1,K):
+       print("Computing time step %d of %d ..." %(imod,K))
        # Each iteration updates the row (time level) imod in UMAT
        temp = computepseudomarginalcone(imod,K,y,G,PMAT,log_flag=log_flag)
        #Pnew = vcomputemultipliercone(PMAT[imod,:],temp,y,nu)
@@ -449,9 +544,9 @@ def computetransportcone(PMAT,k_map,y,G, conedensity_flag = False,log_flag = Fal
    
     if k_map == 0:
         # Only works for homogeneous density and 1 in y
-
         if conedensity_flag:
-            return np.outer(y==1,np.ones(Nx)/Nx)
+            idx = np.argmin(abs(y-1.))
+            return np.outer(y==y[idx],np.ones(Nx)/Nx)
         else:
             return np.eye(Nx)/Nx
     else:
@@ -472,7 +567,31 @@ def computetransportcone(PMAT,k_map,y,G, conedensity_flag = False,log_flag = Fal
         return np.sum(T_tot.reshape(len(y),Nx,Nx),axis=0)
 
 
-def savefigscone(errv,PMAT, X1, eps , path , ext='eps', verbose=True):
+def savedatacone(errv,PMAT,X1,eps, path):
+    """Save data
+    
+    :param path: folder where to save to 
+    """
+
+
+    # If the directory does not exist, create it
+    if os.path.exists(path):
+        print("WARNING: Path already exists")
+        return 
+    else:
+        os.makedirs(path)
+
+    # The final path to save to
+    savepath = os.path.join(path, "errv.npy")
+    np.save(savepath,errv)
+    savepath = os.path.join(path, "PMAT.npy")
+    np.save(savepath,PMAT)
+    savepath = os.path.join(path, "X1.npy")
+    np.save(savepath,X1)
+        
+    return 
+ 
+def savefigscone(errv,PMAT, X1, eps,G , path , ext='eps',log_flag = False, verbose=True):
     """Save figures 
     
     :param path: folder where to save to 
@@ -486,27 +605,28 @@ def savefigscone(errv,PMAT, X1, eps , path , ext='eps', verbose=True):
     Niter = len(errv)
 
     # If the directory does not exist, create it
-    if not os.path.exists(path):
+    if os.path.exists(path):
+        print("WARNING: Path already exists")
+        return 
+    else:
         os.makedirs(path)
 
-    # The final path to save to
-    savepath = os.path.join(path, filename)
-
     if verbose:
-        print("Saving figure to '%s'..." % savepath),
+       print("Saving figure to '%s'..." % path)
 
     #Write text file with parameters
     filename = "logfile.txt"
     savepath = os.path.join(path, filename)
     f = open(savepath,'w')
     f.write('# PARAMETERS\n')
+    f.write("# eps: Sinkhorn regularization parameter\n")
     f.write("# Niter: Number of iterations\n")
     f.write("# K: Number of time steps\n")
     f.write("# Nx Number of points in physical space \n")
     f.write("# Nr Number of points in radial direction\n")
     f.write("# rmax: Min radial bound \n")
     f.write("# rmin: Max radial bound \n\n")
-    f.write("Niter=%d \nK=%d \nNx=%d \nNr=%d \nrmin=%f \nrmax=%f "% (Niter,K,Nx,Nr,rmin ,rmax))
+    f.write("eps =%f \nNiter=%d \nK=%d \nNx=%d \nNr=%d \nrmin=%f \nrmax=%f "% (eps,Niter,K,Nx,Nr,rmin ,rmax))
 
     f.close()
 
@@ -516,30 +636,30 @@ def savefigscone(errv,PMAT, X1, eps , path , ext='eps', verbose=True):
     savepath = os.path.join(path, filename)
     fig = plt.semilogy(errv)
     plt.savefig(savepath, format = "eps")
-    plt.close	 
+    plt.clf() 	 
+
 
     for k_map in range(K):
 
-	Tmap = mm.computetransportcone(PMAT,k_map,X1,G,conedensity_flag = False, log_flag=log_flag)
-	fig = plt.imshow(-30*Tmap,origin='lower',cmap = 'gray')
-	fig.axes.get_xaxis().set_visible(False)
-	fig.axes.get_yaxis().set_visible(False)
-	# The final path to save to
+        Tmap = computetransportcone(PMAT,k_map,X1,G,conedensity_flag = False, log_flag=log_flag)
+        fig1 = plt.imshow(-30*Tmap,origin='lower',cmap = 'gray')
+	fig1.axes.get_xaxis().set_visible(False)
+	fig1.axes.get_yaxis().set_visible(False)
 	filename = "transport_%d.%s" % (k_map, ext)
 	savepath = os.path.join(path, filename)
-	plt.savefig(savepath, format =ext )
-	plt.close()
-	Tconemap = mm.computetransportcone(PMAT,k_map,X1,G,conedensity_flag=True, log_flag=log_flag)
-	fig = plt.imshow(-30*Tconemap,origin='lower',cmap = 'gray')
-	fig.axes.get_xaxis().set_visible(False)
-	fig.axes.get_yaxis().set_visible(False)
-	# The final path to save to
+	plt.savefig(savepath, format =ext)
+        
+        Tconemap = computetransportcone(PMAT,k_map,X1,G,conedensity_flag=True, log_flag=log_flag)
+	fig1 = plt.imshow(-30*Tconemap,origin='lower',cmap = 'gray')
+	fig1.axes.get_xaxis().set_visible(False)
+	fig1.axes.get_yaxis().set_visible(False)
 	filename = "radialmarg_%d.%s" % (k_map, ext)
 	savepath = os.path.join(path, filename)
 	plt.savefig(savepath, format =ext )  
-	plt.close()
+
 
     if verbose:
         print("Done")
-
+    
+    return 
 
