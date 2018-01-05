@@ -436,7 +436,14 @@ def fixedpointconeroll(PMAT,G,y,nu,log_flag=False):
    Nx = PMAT.shape[1] #Number of cells
    K =  PMAT.shape[0] #Number of time steps
    
-   # Change of variables
+   # Bacward computation (storing)
+   S = [G[setcurrentkernelcone(K-2,K)]]*(K-2)
+   for ii in range(K-2,1,-1):
+      U = liftmultipliercone(PMAT[ii,:],y)
+      S[ii-2] = (G[setcurrentkernelcone(ii-1,K)]*U).dot(S[ii-1])
+
+
+   # Forward computation
    temp = computepseudomarginalcone(0,K,y,G,PMAT,log_flag=log_flag)   
    if log_flag:
        PMAT[0,:] = np.log(nu)-temp
@@ -444,17 +451,17 @@ def fixedpointconeroll(PMAT,G,y,nu,log_flag=False):
        PMAT[0,:] = np.log(nu/temp)
 
    pseudostored = (G[2]*np.exp(PMAT[0,:])).dot(G[0])
-   
+   Uend = liftmultipliercone(PMAT[K-1,:],y)
+
    for imod in range(1,K):
        print("Computing time step %d of %d ..." %(imod,K))
        # Each iteration updates the row (time level) imod in UMAT
        if imod < K-1:     
-            temp_kernel = G[setcurrentkernelcone(imod,K)]
-            for ii in range(imod+1,K-1): 
-                temp_kernel = computetempkernelcone(temp_kernel,ii,K,y,G,PMAT,log_flag=log_flag)
+#            temp_kernel = G[setcurrentkernelcone(imod,K)]
+#            for ii in range(imod+1,K-1): 
+#                temp_kernel = computetempkernelcone(temp_kernel,ii,K,y,G,PMAT,log_flag=log_flag)
            
-            U = liftmultipliercone(PMAT[K-1,:],y)
-            temp =np.sum((temp_kernel*U)*pseudostored.T,axis=1) 
+            temp =np.sum((S[imod-1]*Uend)*pseudostored.T,axis=1) 
        else:
             temp = np.diag(pseudostored)
          

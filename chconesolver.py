@@ -11,13 +11,13 @@ import numpy as np
 import time as time
 import matplotlib.pyplot as plt
 
-Nx = 30 #28#35 
-Nr = 21
+Nx = 40 #28#35 
+Nr = 31
 
 L = 1.0
 h = L/Nx
 hr = np.pi/2.0/(Nr+1)
-K = 30#20 
+K = 35#20 
 eps = 0.0005# 0.0005
 
 # Parameters for cone metric
@@ -64,8 +64,8 @@ G = [Xi0init,Xi0,Xi1]
 #while err>tol:
 for ii in range(1):
     t = time.time()
-    PMAT, err = mm.fixedpointcone(PMAT,G,X1,nu, log_flag=log_flag)
-    #PMAT, err = mm.fixedpointconeroll(PMAT,G,X1,nu, log_flag=log_flag)
+    #PMAT, err = mm.fixedpointcone(PMAT,G,X1,nu, log_flag=log_flag)
+    PMAT, err = mm.fixedpointconeroll(PMAT,G,X1,nu, log_flag=log_flag)
     errv.append(err)
     elaps= time.time()-t
     ii +=1
