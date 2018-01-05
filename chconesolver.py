@@ -11,14 +11,14 @@ import numpy as np
 import time as time
 import matplotlib.pyplot as plt
 
-Nx = 35 #28#35 
-Nr = 41
+Nx = 15 #28#35 
+Nr = 11
 
 L = 1.0
 h = L/Nx
 hr = np.pi/2.0/(Nr+1)
-K = 25#20 
-eps = 0.001# 0.0005
+K = 20#20 
+eps = 0.0001# 0.0005
 
 # Parameters for cone metric
 a = 1.0

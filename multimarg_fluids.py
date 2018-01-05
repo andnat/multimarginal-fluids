@@ -323,38 +323,39 @@ def computemultipliercone(p_old,pseudomarg,y,nu,log_flag=False):
     # Not parallelized version
     p_new=np.array(p_old)
     for i in range(Nx):
-        dico = so.root(obj,1.0,args=(i,pseudomargmat[:,i],y,nu[i]), method="broyden1",tol = 1e-6)
-        #dico = so.root(obj,1.0, jac = jacobjective,args=(i,pseudomargmat[:,i],y,nu[i]),tol = 1e-6)#, method="broyden1")#,tol = 1e-8)
+        dico = so.root(obj,1.0,args=(pseudomargmat[:,i],y,nu[i]), method="broyden1",tol = 1e-6)
+        #dico = so.root(obj,1.0, jac = jacobjective,args=(pseudomargmat[:,i],y,nu[i]),tol = 1e-6)#, method="broyden1")#,tol = 1e-8)
         p_new[i] = dico["x"]
-        #p_new[i] =  so.fsolve(obj,1.0,fprime=jacobjective, args=(i,pseudomargmat[:,i],y,nu[i]), xtol = 1e-6)
+        #p_new[i] =  so.fsolve(obj,1.0,fprime=jacobjective, args=(pseudomargmat[:,i],y,nu[i]), xtol = 1e-6)
  
     # Parallelized version
-    #p_new = np.asarray(Parallel(n_jobs=3)(delayed(optimizer)(i=i,pseudomargmat=pseudomargmat[:,i],y=y,nu=nu[i],obj=obj) for i in range(Nx)))
+    #p_new = np.asarray(Parallel(n_jobs=3)(delayed(optimizer)(pseudomargmat=pseudomargmat[:,i],y=y,nu=nu[i],obj=obj) for i in range(Nx)))
   
     return p_new
 
-def objective(p,i,pseudomargmati,y,nui):
+def objective(p,pseudomargmati,y,nui):
     """ Computes marginal residual """
     #newDensityLOG = np.log((np.exp(p*y)*y).dot(pseudomargmati))
     newDensityLOG = misc.logsumexp(p*y,b=y*pseudomargmati)
     return newDensityLOG -np.log(nui)
 
-def jacobjective(p,i,pseudomargmati,y,nui):
+def jacobjective(p,pseudomargmati,y,nui):
     """Computes jacobian of objective """
     A = p*y
     B = y*pseudomargmati
-    Jac = np.exp( misc.logsumexp(A,b=B)-misc.logsumexp(A,b =y*B)) +p*i*pseudomargmati*nui*0.0
+    Jac = np.exp( misc.logsumexp(A,b=B)-misc.logsumexp(A,b =y*B)) +p*pseudomargmati*nui*0.0
     #Jac = ((np.exp(p*y)*y*y).dot(pseudomargmati))/((np.exp(p*y)*y).dot(pseudomargmati)) +p*i*pseudomargmati*nui*0.0
     return Jac 
 
-def objectiveLOG(p,i,pseudomargmatLOG,y,nu):
+def objectiveLOG(p,pseudomargmatLOGi,y,nui):
     """ Computes marginal residual using  log coordinates """
-    newDensityLOG =np.log(np.sum(np.exp( np.log(y) + p*y+pseudomargmatLOG[:,i])))
-    return newDensityLOG-np.log(nu[i])
+    #newDensityLOG =  np.log(np.sum(np.exp( np.log(y) + p*y+pseudomargmatLOGi)))
+    newDensityLOG =  misc.logsumexp(np.log(y) + p*y+pseudomargmatLOGi)
+    return newDensityLOG-np.log(nui)
 
  
-def optimizer(i,pseudomargmat,y,nu,obj):
-    return so.root(obj,1.0,args=(i,pseudomargmat,y,nu),method="broyden1",tol=1e-6)['x']
+def optimizer(pseudomargmat,y,nui,obj):
+    return so.root(obj,1.0,args=(pseudomargmati,y,nui),method="broyden1",tol=1e-6)['x']
 
 
 def vcomputemultipliercone(p_old,pseudomarg,y,nu):
