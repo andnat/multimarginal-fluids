@@ -12,13 +12,13 @@ import time as time
 import matplotlib.pyplot as plt
 
 Nx = 40 #28#35 
-Nr = 31
+Nr = 41
 
 L = 1.0
 h = L/Nx
 hr = np.pi/2.0/(Nr+1)
-K = 35#20 
-eps = 0.0005# 0.0005
+K = 20
+eps = 0.001# 0.0005
 
 # Parameters for cone metric
 a = 1.0
@@ -40,11 +40,9 @@ nu = h*np.ones(Nx)
 
 log_flag = False 
 
-
 Xi0init = mm.generateinitcostcone(X0,X,a,b,eps, log_flag=log_flag)
 Xi0 = mm.generatecostcone(X,X,a,b,eps, log_flag=log_flag)
 #Xi1 = mm.generatecouplingcone(X,X0,mm.fcone,a,b,eps)
-
 Xi1 = mm.generatecouplingcone(X,X0,mm.S,a,b,eps,det=False, log_flag=log_flag)
 
 
@@ -62,10 +60,14 @@ ii = 0
 errv =[]
 G = [Xi0init,Xi0,Xi1]
 #while err>tol:
+
+# STANDARD ITERATION METHOD
+S = []
 for ii in range(1):
     t = time.time()
-    #PMAT, err = mm.fixedpointcone(PMAT,G,X1,nu, log_flag=log_flag)
-    PMAT, err = mm.fixedpointconeroll(PMAT,G,X1,nu, log_flag=log_flag)
+    PMAT, err = mm.fixedpointconeroll(PMAT,G,X1,nu)
+    #PMAT, err, S = mm.fixedpointconerollback(PMAT,S,G,X1,nu)
+    
     errv.append(err)
     elaps= time.time()-t
     ii +=1
@@ -74,16 +76,25 @@ for ii in range(1):
     print("Marginal error: %f" % err)
 
 
+# ANDERSON ITERATION METHOD
+#params = [G,X1,nu]
+#iterations_simple = 100
+#iterations_anderson = 0 #43#400#60 
+#number_of_steps = 1 
+#memory_number = 0 #8#60 
+
+#PMAT, errv = mm.OptimizationAndersonMixed(mm.fixedpointconeroll,PMAT, iterations_simple,iterations_anderson,number_of_steps,memory_number,params)
+
+
 # Compute transport map from 0 to time t
 #k_map = int(K/2)
 
 
 
-path = "Figs/Test3"
-#mm.savefigscone(errv,PMAT, X1, eps , path , ext='eps')
+path = "Figs/Test4"
+mm.savefigscone(errv,PMAT, X1, eps ,G, path , ext='eps')
 
 
-#
 #fig = plt.semilogy(errv)
 #plt.savefig(('Figs/Convergence.eps' %k_map),format = "eps")
 # 

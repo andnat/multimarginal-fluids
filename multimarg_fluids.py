@@ -2,18 +2,133 @@
 Module containing classes and functions for computation of a multimarginal problem for fluids 
 """
 import os
+import time as time
 import numpy as np
 import scipy.optimize as so
 import scipy.misc as misc
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 
+##############################################################################################################
+# Anderson Accelerator #######################################################################################
+##############################################################################################################
+
+### Anderson acceleration scheme as written in 
+### Anderson acceleration for fixed point iterations by Walker and Ni.
+
+
+def AndersonAcceleration2(FixedPointFunc,x,iterations,Lnumber):
+    """Anderson acceleration scheme
+ 
+       :param FixedPointFunc: fixed point function returning (x,err) to be accelerated
+       :param x: old fixed point estimate as 1d array
+       :param iterations: number of Anderson iterations
+       :param Lnumber: number of iterations using given fixed point function
+       :param errv:  list of errors
+    
+       :returns x: current fixed point estimate
+       :returns errv: list of errors
+    """ 
+
+    
+    nx = len(x)
+    ### Allocate variables
+    IteratesMatrixTemp = np.zeros([nx,Lnumber+1])
+    DeltaIteratesMatrix = np.zeros([nx,Lnumber])
+    
+    ResidualsMatrixTemp = np.zeros([nx,Lnumber+1])
+    DeltaResidualsMatrix = np.zeros([nx,Lnumber])
+    errv =[]
+    ### Build Matrices Data on the first Lnumber steps 
+    for i in range(Lnumber+1):
+        tic= time.time()
+        ResidualsMatrixTemp[:,i] = -np.copy(x)
+        x,err = FixedPointFunc(x)
+        errv.append(err)
+        ResidualsMatrixTemp[:,i] += x
+        IteratesMatrixTemp[:,i] = np.copy(x)
+        toc = time.time() -tic
+        print("Memory iteration: %d" %i)
+        print("Elapsed time: %f" % toc)
+        print("Marginal error: %.15f" %err)   
+ 
+    old_iterate = IteratesMatrixTemp[:,Lnumber]
+    old_residual = ResidualsMatrixTemp[:,Lnumber]
+    
+    DeltaResidualsMatrix = ResidualsMatrixTemp[:,1:] - ResidualsMatrixTemp[:,:-1]
+    DeltaIteratesMatrix = IteratesMatrixTemp[:,1:] - IteratesMatrixTemp[:,:-1] 
+    
+    print("START ANDERSON ITERATIONS")
+    ### Iterations of Anderson 
+    
+    for i in range(iterations):
+
+        tic = time.time()  
+        ### compute weights and update current iterate
+        weights = np.linalg.lstsq(DeltaResidualsMatrix,old_residual)[0]
+        x = old_iterate - DeltaIteratesMatrix.dot(weights)
+        #x = old_iterate + old_residual - (DeltaResidualsMatrix + DeltaIteratesMatrix).dot(weights)
+         
+        new_iterate, err = FixedPointFunc(x)
+        errv.append(err)
+        ### update matrices
+        #index = (i%Lnumber)
+        #DeltaIteratesMatrix[:,index] = new_iterate-old_iterate
+        #DeltaResidualsMatrix[:,index] = new_iterate-x - old_residual
+
+        DeltaIteratesMatrix = np.roll(DeltaIteratesMatrix,-1,axis=1) 
+        DeltaResidualsMatrix = np.roll(DeltaResidualsMatrix,-1,axis=1)
+        DeltaIteratesMatrix[:,-1] = new_iterate-old_iterate
+        DeltaResidualsMatrix[:,-1] = new_iterate-x - old_residual
+
+        ### update residuals
+        old_residual = new_iterate - x
+        old_iterate = new_iterate        
+        toc = time.time()-tic
+        print("Anderson iteration: %d" %i)
+        print("Elapsed time: %f" % toc)
+        print("Marginal error: %.15f" %err)
+    return x, errv
+
+def OptimizationAndersonMixed(FixedPointFunc,P,iterations_simple,iterations_anderson,number_of_steps,memory_number,p):
+    Pshape = P.shape
+    def functiontemp(x):
+        y = np.reshape(x,Pshape)
+        z ,err = FixedPointFunc(y,*p)
+        return z.flatten(),err
+    errv = []
+    for t in range(iterations_simple):
+        tic = time.time()
+        P,err = FixedPointFunc(P,*p)
+        errv.append(err)
+        toc = time.time() -tic
+        print("Simple fixed point iteration: %d" %t)
+        print("Elapsed time: %f" % toc)
+        print("Marginal error: %f" %err)      
+    for r in range(number_of_steps):
+        print("MULTISTEP ANDERSON: STEP %d" % r)
+      
+        P,errva = AndersonAcceleration2(functiontemp,P.flatten(),iterations_anderson,memory_number)        
+        P = np.reshape(P,Pshape)
+        errv.extend(errva)
+    
+    return P,errv
+
+
+
+
+##############################################################################################################
+# Functions for Euler solutions in 1D ########################################################################
+############################################################################################################## 
+
+
+
 def S(x):
-    return 1.0 - x
-    #if x < 0.5:
-    #    return 2.0*x 
-    #else:
-    #    return 2.0 -2.0*x
+    #return 1.0 - x
+    if x < 0.5:
+        return 2.0*x 
+    else:
+        return 2.0 -2.0*x
 
 
 def generatecost(x,y,sigma,penalty=1.0):
@@ -125,13 +240,15 @@ def computetransport(UMAT,k_map,G):
              temp_kernel = (temp_kernel*UMAT[ss,:]).dot(G[setcurrentkernel(ss,K)])
         return (temp_kernel*UMAT[0,:])*((temp_kernel2*UMAT[k_map,:]).T)
 
-"""
-Functions for CH solutions on cone : 
-    Implementation using m =sqrt(r) change of variable
-    - metric on cone  m g + dm^2/m 
-    - distance on cone m1 + m2 - 2*sqrt(m1 m2) cos( d(x1,x2) wedge pi) 
-    - map (x,m) = (phi,Jac(phi))
-"""
+#################################################################################################################
+# Functions for CH solutions on cone ############################################################################ 
+#################################################################################################################
+
+#    Implementation using m =sqrt(r) change of variable
+#    - metric on cone  m g + dm^2/m 
+#    - distance on cone m1 + m2 - 2*sqrt(m1 m2) cos( d(x1,x2) wedge pi) 
+#    - map (x,m) = (phi,Jac(phi))
+
 
 
 def fcone(x):
@@ -419,7 +536,7 @@ def vcomputemultipliercone(p_old,pseudomarg,y,nu):
     return p_new
 
 
-def fixedpointconeroll(PMAT,G,y,nu,log_flag=False):
+def fixedpointconerollback(PMATinit,S,G,y,nu):
    """Fixed point map on Lagrange multipliers for multimarginal problem
        
       :param PMAT: array containing logarithm of Lagrange multipliers (rows) to enforce marginals
@@ -430,56 +547,122 @@ def fixedpointconeroll(PMAT,G,y,nu,log_flag=False):
       :param Xi1: cost associated to coupling
       :param nu: marginal to be enforced at each time
    
-      :returns LUMAT: updated LUMAT
+      :returns PMAT: updated PMAT
       :returns err: marginal deviation from previous iteration at time K/2  
    """
+   PMAT = np.copy(PMATinit)
    Nx = PMAT.shape[1] #Number of cells
    K =  PMAT.shape[0] #Number of time steps
    
-   # Bacward computation (storing)
-   S = [G[setcurrentkernelcone(K-2,K)]]*(K-2)
-   for ii in range(K-2,1,-1):
-      U = liftmultipliercone(PMAT[ii,:],y)
-      S[ii-2] = (G[setcurrentkernelcone(ii-1,K)]*U).dot(S[ii-1])
+   # Bacward computation (storing) if S empty list
+   if not S:
+      S = [G[setcurrentkernelcone(K-2,K)]]*(K-1)
+      for ii in range(K-2,0,-1):
+         U = liftmultipliercone(PMAT[ii,:],y)
+         S[ii-1] = (G[setcurrentkernelcone(ii-1,K)]*U).dot(S[ii])
 
 
    # Forward computation
-   temp = computepseudomarginalcone(0,K,y,G,PMAT,log_flag=log_flag)   
-   if log_flag:
-       PMAT[0,:] = np.log(nu)-temp
-   else: 
-       PMAT[0,:] = np.log(nu/temp)
+   Uend = liftmultipliercone(PMAT[K-1,:],y)
+   temp =  np.sum((S[0]*Uend)*G[2].T,axis=1) 
+   PMAT[0,:] = np.log(nu/temp)
 
    pseudostored = (G[2]*np.exp(PMAT[0,:])).dot(G[0])
-   Uend = liftmultipliercone(PMAT[K-1,:],y)
-
+   P =[]
+   P.append(pseudostored)
+   
    for imod in range(1,K):
        print("Computing time step %d of %d ..." %(imod,K))
        # Each iteration updates the row (time level) imod in UMAT
        if imod < K-1:     
-#            temp_kernel = G[setcurrentkernelcone(imod,K)]
-#            for ii in range(imod+1,K-1): 
-#                temp_kernel = computetempkernelcone(temp_kernel,ii,K,y,G,PMAT,log_flag=log_flag)
-           
-            temp =np.sum((S[imod-1]*Uend)*pseudostored.T,axis=1) 
+            temp = np.sum((S[imod]*Uend)*pseudostored.T,axis=1) 
        else:
             temp = np.diag(pseudostored)
          
        #Pnew = vcomputemultipliercone(PMAT[imod,:],temp,y,nu)
-       Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu,log_flag=log_flag)
+       Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu)
+       
+       if imod == int(K/2):
+            newDensity = 0.0
+            U =  liftmultipliercone(PMAT[imod,:],y)
+            marg = np.sum((temp*U).reshape(len(y),Nx).T*y,axis=1)
+            err = np.sum(np.abs(marg-nu))
+            
+       PMAT[imod,:] = Pnew
+       
+       if imod< K-1:
+            pseudostored = computetempkernelcone(pseudostored,imod,K,y,G,PMAT)
+            P.append(pseudostored)
+ 
+   Uend = liftmultipliercone(PMAT[K-1,:],y)
+   #Backward computation       
+   for ii in range(K-2,0,-1):
+       print("Computing time step %d of %d ..." %(ii,K))      
+       temp = np.sum((S[ii]*Uend)*P[ii-1].T,axis=1)
+       Pnew =  computemultipliercone(PMAT[ii,:],temp,y,nu)
+       PMAT[ii,:] = Pnew
+       U = liftmultipliercone(PMAT[ii,:],y)
+       S[ii-1] = (G[setcurrentkernelcone(ii-1,K)]*U).dot(S[ii])
+
+                 
+   return PMAT, err , S
+
+
+
+def fixedpointconeroll(PMATinit,G,y,nu):
+   """Fixed point map on Lagrange multipliers for multimarginal problem
+       
+      :param PMAT: array containing logarithm of Lagrange multipliers (rows) to enforce marginals
+      :param nu: marginal to be enforced at each time (on base space)
+      :param G: list G = [Xi0init,Xi0,Xi1]
+      :param Xi0init: cost associated to first and second time steps
+      :param Xi0: cost associated to successive time steps
+      :param Xi1: cost associated to coupling
+      :param nu: marginal to be enforced at each time
+   
+      :returns PMAT: updated PMAT
+      :returns err: marginal deviation from previous iteration at time K/2  
+   """
+   PMAT = np.copy(PMATinit)
+   Nx = PMAT.shape[1] #Number of cells
+   K =  PMAT.shape[0] #Number of time steps
+   
+   # Bacward computation (storing)
+   S = [G[setcurrentkernelcone(K-2,K)]]*(K-1)
+   for ii in range(K-2,0,-1):
+      U = liftmultipliercone(PMAT[ii,:],y)
+      S[ii-1] = (G[setcurrentkernelcone(ii-1,K)]*U).dot(S[ii])
+
+
+   # Forward computation
+
+   Uend = liftmultipliercone(PMAT[K-1,:],y)
+   temp =  np.sum((S[0]*Uend)*G[2].T,axis=1) 
+   PMAT[0,:] = np.log(nu/temp)
+
+   pseudostored = (G[2]*np.exp(PMAT[0,:])).dot(G[0])
+ 
+   for imod in range(1,K):
+       print("Computing time step %d of %d ..." %(imod,K))
+       # Each iteration updates the row (time level) imod in UMAT
+       if imod < K-1:     
+            temp =np.sum((S[imod]*Uend)*pseudostored.T,axis=1) 
+       else:
+            temp = np.diag(pseudostored)
+         
+       #Pnew = vcomputemultipliercone(PMAT[imod,:],temp,y,nu)
+       Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu)
        
        if imod == int(K/2):
             newDensity = 0.0
             # NOT using LOG scale here to produce error
             U =  liftmultipliercone(PMAT[imod,:],y)
-            if log_flag:
-                temp= np.exp(temp)
             marg = np.sum((temp*U).reshape(len(y),Nx).T*y,axis=1)
             err = np.sum(np.abs(marg-nu))
             #err = np.sum(np.abs(PMAT[imod,:]))
        PMAT[imod,:] = Pnew
-       
-       pseudostored = computetempkernelcone(pseudostored,imod,K,y,G,PMAT,log_flag=log_flag)
+       if imod<K-1:
+            pseudostored = computetempkernelcone(pseudostored,imod,K,y,G,PMAT)
 
    return PMAT, err
 
