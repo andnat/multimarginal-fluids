@@ -5,37 +5,43 @@
     :param N: Number of cells in domain
     :param L: Length of domain
 """
-
+import sys
 import multimarg_fluids as mm
 import numpy as np
 import time as time
 import matplotlib.pyplot as plt
 
-Nx = 40 #28#35 
-Nr = 41
 
-L = 1.0
-h = L/Nx
-hr = np.pi/2.0/(Nr+1)
-K = 20
-eps = 0.001# 0.0005
+load_flag = True
+inputpath = 'Figs/Test'
+
+if load_flag:
+    sys.path.append(inputpath)
+    from logfile import *
+else:    
+    Nx = 40 #28#35 
+    Nr = 41
+    K = 35
+    eps = 0.0005
+    rmin =0.6
+    rmax= 1.4
+
 
 # Parameters for cone metric
 a = 1.0
 b= 0.5
+L = 1.0
+h = L/Nx
 
 X0 = np.linspace(0.0,L,Nx)
 #X1 = np.asarray([1.0]) 
-#X1= np.exp(np.linspace(-2.0,1.0,Nr))
-X1 =np.linspace(0.6,1.4,Nr)
-#X1 = np.linspace(0.7,1.3,Nr)
 
+X1 =np.linspace(rmin,rmax,Nr)
 X0m,X1m = np.meshgrid(X0,X1)
 X =[X0m,X1m]
 
 # Marginal using x1 = arctan(r) change of variable
 nu = h*np.ones(Nx) 
-
 
 
 log_flag = False 
@@ -51,21 +57,22 @@ Xi1 = mm.generatecouplingcone(X,X0,mm.S,a,b,eps,det=False, log_flag=log_flag)
 #Xi1 = mm.generatecost(X,X[sigma],eps*0.1)
 
 # Lagrange multiplier matrix 
-PMAT = np.zeros([K,Nx])
+if load_flag:
+    PMAT = np.load('%s/%s' %(inputpath,"PMAT.npy")
+    errv = np.load('%s/%s' %(inputpath,"errv.npy")
+    ii = len(errv)
+else: 
+    PMAT = np.zeros([K,Nx])
+    errv = []
+    ii = 0
 
-tol = 10**-7
-err = 1.0
 
-ii = 0
-errv =[]
 G = [Xi0init,Xi0,Xi1]
-#while err>tol:
 
 # STANDARD ITERATION METHOD
-S = []
-for ii in range(1):
+for ii in range(3000):
     t = time.time()
-    PMAT, err = mm.fixedpointconeroll(PMAT,G,X1,nu)
+    PMAT, err = mm.fixedpointconeroll(PMAT,G,X1,nu,verbose= False)
     #PMAT, err, S = mm.fixedpointconerollback(PMAT,S,G,X1,nu)
     
     errv.append(err)
@@ -74,6 +81,7 @@ for ii in range(1):
     print("ITERATION %d" % ii)
     print("Elapsed time: %f" % elaps)
     print("Marginal error: %f" % err)
+    #sys.stdout.write("Marginal error: %f" % err)
 
 
 # ANDERSON ITERATION METHOD
@@ -85,15 +93,12 @@ for ii in range(1):
 
 #PMAT, errv = mm.OptimizationAndersonMixed(mm.fixedpointconeroll,PMAT, iterations_simple,iterations_anderson,number_of_steps,memory_number,params)
 
-
 # Compute transport map from 0 to time t
 #k_map = int(K/2)
 
-
-
-path = "Figs/Test4"
+path = "Figs/Testcont"
 mm.savefigscone(errv,PMAT, X1, eps ,G, path , ext='eps')
-
+mm.savedatacone(errv,PMAT,X1,eps, path)
 
 #fig = plt.semilogy(errv)
 #plt.savefig(('Figs/Convergence.eps' %k_map),format = "eps")

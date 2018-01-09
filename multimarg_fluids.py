@@ -7,6 +7,7 @@ import numpy as np
 import scipy.optimize as so
 import scipy.misc as misc
 import matplotlib.pyplot as plt
+plt.switch_backend('agg')
 from joblib import Parallel, delayed
 
 ##############################################################################################################
@@ -124,11 +125,11 @@ def OptimizationAndersonMixed(FixedPointFunc,P,iterations_simple,iterations_ande
 
 
 def S(x):
-    #return 1.0 - x
-    if x < 0.5:
-        return 2.0*x 
-    else:
-        return 2.0 -2.0*x
+    return 1.0 - x
+    #if x < 0.5:
+    #    return 2.0*x 
+    #else:
+    #    return 2.0 -2.0*x
 
 
 def generatecost(x,y,sigma,penalty=1.0):
@@ -583,7 +584,6 @@ def fixedpointconerollback(PMATinit,S,G,y,nu):
        Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu)
        
        if imod == int(K/2):
-            newDensity = 0.0
             U =  liftmultipliercone(PMAT[imod,:],y)
             marg = np.sum((temp*U).reshape(len(y),Nx).T*y,axis=1)
             err = np.sum(np.abs(marg-nu))
@@ -609,7 +609,7 @@ def fixedpointconerollback(PMATinit,S,G,y,nu):
 
 
 
-def fixedpointconeroll(PMATinit,G,y,nu):
+def fixedpointconeroll(PMATinit,G,y,nu,verbose=False):
    """Fixed point map on Lagrange multipliers for multimarginal problem
        
       :param PMAT: array containing logarithm of Lagrange multipliers (rows) to enforce marginals
@@ -633,9 +633,7 @@ def fixedpointconeroll(PMATinit,G,y,nu):
       U = liftmultipliercone(PMAT[ii,:],y)
       S[ii-1] = (G[setcurrentkernelcone(ii-1,K)]*U).dot(S[ii])
 
-
    # Forward computation
-
    Uend = liftmultipliercone(PMAT[K-1,:],y)
    temp =  np.sum((S[0]*Uend)*G[2].T,axis=1) 
    PMAT[0,:] = np.log(nu/temp)
@@ -643,26 +641,23 @@ def fixedpointconeroll(PMATinit,G,y,nu):
    pseudostored = (G[2]*np.exp(PMAT[0,:])).dot(G[0])
  
    for imod in range(1,K):
-       print("Computing time step %d of %d ..." %(imod,K))
+       if verbose:
+            print("Computing time step %d of %d ..." %(imod,K))
        # Each iteration updates the row (time level) imod in UMAT
        if imod < K-1:     
             temp =np.sum((S[imod]*Uend)*pseudostored.T,axis=1) 
        else:
             temp = np.diag(pseudostored)
-         
-       #Pnew = vcomputemultipliercone(PMAT[imod,:],temp,y,nu)
-       Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu)
-       
+        
        if imod == int(K/2):
-            newDensity = 0.0
-            # NOT using LOG scale here to produce error
-            U =  liftmultipliercone(PMAT[imod,:],y)
+            U = liftmultipliercone(PMAT[imod,:],y)
             marg = np.sum((temp*U).reshape(len(y),Nx).T*y,axis=1)
-            err = np.sum(np.abs(marg-nu))
-            #err = np.sum(np.abs(PMAT[imod,:]))
-       PMAT[imod,:] = Pnew
+            err = np.sum(np.abs(marg-nu))    
+       Pnew =  computemultipliercone(PMAT[imod,:],temp,y,nu)
        if imod<K-1:
-            pseudostored = computetempkernelcone(pseudostored,imod,K,y,G,PMAT)
+            U = liftmultipliercone(Pnew,y)
+            pseudostored = (pseudostored*U).dot(G[setcurrentkernelcone(imod,K)])
+       PMAT[imod,:] = Pnew
 
    return PMAT, err
 
@@ -767,7 +762,7 @@ def savedatacone(errv,PMAT,X1,eps, path):
     # If the directory does not exist, create it
     if os.path.exists(path):
         print("WARNING: Path already exists")
-        return 
+        #return 
     else:
         os.makedirs(path)
 
@@ -805,7 +800,7 @@ def savefigscone(errv,PMAT, X1, eps,G , path , ext='eps',log_flag = False, verbo
        print("Saving figure to '%s'..." % path)
 
     #Write text file with parameters
-    filename = "logfile.txt"
+    filename = "logfile.py"
     savepath = os.path.join(path, filename)
     f = open(savepath,'w')
     f.write('# PARAMETERS\n')
