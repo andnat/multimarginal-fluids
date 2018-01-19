@@ -255,6 +255,32 @@ def computetransport(UMAT,k_map,G):
 def fcone(x):
     return [(np.exp(x)-1.0)/(np.exp(1)-1),np.exp(x)/(np.exp(1)-1)]
 
+def peakon(x):
+    if x<=0.5:
+       return 1.4*x
+    else: 
+       return 0.6*x + 0.4
+
+def peakondet(x):
+    if x<=0.5:
+       return 1.4
+    else: 
+       return 0.6
+
+def peakon1(x):
+    if x<=0.5:
+       return 2.0*x
+    else: 
+       return 1.0
+
+def peakondet1(x):
+    if x<=0.5:
+       return 2.0
+    else: 
+       return 0.0
+
+
+
 def costcone(x0,x1,y0,y1,a,b):
     """ Computes cost on cone 
          
@@ -331,7 +357,7 @@ def generateinitcostcone(x,Y,a,b,sigma,log_flag=False):
 
 
 
-def generatecouplingcone(X,x,fundet,a,b,sigma,det=True,log_flag=False):
+def generatecouplingcone(X,x,fun, fundet,a,b,sigma,log_flag=False):
     """Generates L2 distance cost function penalising coupling 
         
        :param X: X[0] flattened meshgrid base space coordinates
@@ -344,16 +370,21 @@ def generatecouplingcone(X,x,fundet,a,b,sigma,det=True,log_flag=False):
 
        :returns cost: cost matrix (rectangular Nx*Nr times Nx)
     """   
-    
-    if det:
-        fundetx = fundet(x)
-        cost = generatecostcone(X,[fundetx[0],fundetx[1]],a,b,sigma,penalty=10.0,log_flag=log_flag)
-        return cost 
-    else:
-        vfun = np.vectorize(fundet)
+    penalty = 40.0 
+ 
+ 
+    if fundet ==1.0:
+        vfun = np.vectorize(fun)
         funx = vfun(x)
-        cost = generatecostcone(X,[funx,np.ones(funx.shape)],a,b,sigma,penalty=10.0,log_flag=log_flag)
+        cost = generatecostcone(X,[funx,np.ones(funx.shape)],a,b,sigma,penalty=penalty,log_flag=log_flag)
         return cost
+    else: 
+        vfun = np.vectorize(fun)
+        vfundet = np.vectorize(fundet)  
+        funx = vfun(x)   
+        fundetx = vfundet(x)
+        cost = generatecostcone(X,[funx,fundetx],a,b,sigma,penalty=penalty,log_flag=log_flag)
+        return cost     
 
 
 def setcurrentkernelcone(k,K):
@@ -462,7 +493,7 @@ def computemultipliercone(p_old,pseudomarg,y,nu,log_flag=False):
        :param nu: marginal on base space 
     """
      
-       
+      
     if log_flag:
          obj = objectiveLOG
     else:
@@ -476,9 +507,10 @@ def computemultipliercone(p_old,pseudomarg,y,nu,log_flag=False):
     # Not parallelized version
     p_new=np.array(p_old)
     for i in range(Nx):
-        dico = so.root(obj,1.0,args=(pseudomargmat[:,i],y,nu[i]), method="broyden1",tol = 1e-6)
+        p_new[i] = so.leastsq(obj,1.0,args=(pseudomargmat[:,i],y,nu[i]),xtol = 1e-6)[0]
+        #dico = so.root(obj,1.0,args=(pseudomargmat[:,i],y,nu[i]), method="broyden1",tol = 1e-6)
         #dico = so.root(obj,1.0, jac = jacobjective,args=(pseudomargmat[:,i],y,nu[i]),tol = 1e-6)#, method="broyden1")#,tol = 1e-8)
-        p_new[i] = dico["x"]
+        #p_new[i] = dico["x"]
         #p_new[i] =  so.fsolve(obj,1.0,fprime=jacobjective, args=(pseudomargmat[:,i],y,nu[i]), xtol = 1e-6)
  
     # Parallelized version

@@ -12,8 +12,8 @@ import time as time
 import matplotlib.pyplot as plt
 
 
-load_flag = True
-inputpath = 'Figs/Test'
+load_flag = True 
+inputpath = 'Figs/Testpeakoncont'
 
 if load_flag:
     sys.path.append(inputpath)
@@ -21,10 +21,10 @@ if load_flag:
 else:    
     Nx = 40 #28#35 
     Nr = 41
-    K = 35
-    eps = 0.0005
-    rmin =0.6
-    rmax= 1.4
+    K = 16
+    eps = 0.005
+    rmin =0.05
+    rmax= 2.05
 
 
 # Parameters for cone metric
@@ -48,8 +48,8 @@ log_flag = False
 
 Xi0init = mm.generateinitcostcone(X0,X,a,b,eps, log_flag=log_flag)
 Xi0 = mm.generatecostcone(X,X,a,b,eps, log_flag=log_flag)
-#Xi1 = mm.generatecouplingcone(X,X0,mm.fcone,a,b,eps)
-Xi1 = mm.generatecouplingcone(X,X0,mm.S,a,b,eps,det=False, log_flag=log_flag)
+Xi1 = mm.generatecouplingcone(X,X0,mm.peakon, mm.peakondet,a,b,eps)
+#Xi1 = mm.generatecouplingcone(X,X0,mm.S,1.0,a,b,eps,log_flag=log_flag)
 
 
 # Alternate coupling assignment via permuation (odd N)
@@ -58,45 +58,41 @@ Xi1 = mm.generatecouplingcone(X,X0,mm.S,a,b,eps,det=False, log_flag=log_flag)
 
 # Lagrange multiplier matrix 
 if load_flag:
-    PMAT = np.load('%s/%s' %(inputpath,"PMAT.npy")
-    errv = np.load('%s/%s' %(inputpath,"errv.npy")
-    ii = len(errv)
+    PMAT = np.load('%s/%s' %(inputpath,"PMAT.npy"))
+    errv = np.load('%s/%s' %(inputpath,"errv.npy"))
+    errv = errv.tolist()
+    
 else: 
     PMAT = np.zeros([K,Nx])
     errv = []
-    ii = 0
+    
 
 
 G = [Xi0init,Xi0,Xi1]
 
 # STANDARD ITERATION METHOD
-for ii in range(3000):
+for ii in range(5000):
     t = time.time()
     PMAT, err = mm.fixedpointconeroll(PMAT,G,X1,nu,verbose= False)
     #PMAT, err, S = mm.fixedpointconerollback(PMAT,S,G,X1,nu)
-    
     errv.append(err)
     elaps= time.time()-t
-    ii +=1
     print("ITERATION %d" % ii)
     print("Elapsed time: %f" % elaps)
     print("Marginal error: %f" % err)
-    #sys.stdout.write("Marginal error: %f" % err)
 
 
 # ANDERSON ITERATION METHOD
 #params = [G,X1,nu]
-#iterations_simple = 100
-#iterations_anderson = 0 #43#400#60 
+#iterations_simple = 50
+#iterations_anderson = 350 #43#400#60 
 #number_of_steps = 1 
-#memory_number = 0 #8#60 
+#memory_number = 10 #40 
+#
+#PMAT, errv1 = mm.OptimizationAndersonMixed(mm.fixedpointconeroll,PMAT, iterations_simple,iterations_anderson,number_of_steps,memory_number,params)
+#errv += errv1 
 
-#PMAT, errv = mm.OptimizationAndersonMixed(mm.fixedpointconeroll,PMAT, iterations_simple,iterations_anderson,number_of_steps,memory_number,params)
-
-# Compute transport map from 0 to time t
-#k_map = int(K/2)
-
-path = "Figs/Testcont"
+path = "Figs/Testpeakoncont1"
 mm.savefigscone(errv,PMAT, X1, eps ,G, path , ext='eps')
 mm.savedatacone(errv,PMAT,X1,eps, path)
 
