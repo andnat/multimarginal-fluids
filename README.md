@@ -1,6 +1,6 @@
-# Multimarginal discretization of fluids
+# Multimarginal OT discretizations for fluids
 
-Python tools for 1D boundary value problem for:
+Python tools to solve 1D boundary value problem for:
  - incompressible Euler equations
  - Camassa-Holm equations
  
