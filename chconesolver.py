@@ -11,6 +11,8 @@ import numpy as np
 import time as time
 import matplotlib.pyplot as plt
 
+#Save path 
+savepath = ""
 
 #Periodic domain
 periodic_flag = True
